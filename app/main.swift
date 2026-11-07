@@ -158,7 +158,16 @@ final class PetView: NSView {
 @MainActor
 final class Pet {
     enum State: Equatable {
-        case sit, walk(CGFloat), run(CGFloat), sleep, react(String), special(String), fall, jump, held
+        case sit, walk(CGFloat), run(CGFloat), sleep, react(String), special(String), act, fall, jump, held
+    }
+
+    /// A little routine: each step is a pose, how long it lasts, and frames per second.
+    struct Step { var pose: String; var seconds: Double; var fps: Double }
+    var steps: [Step] = []
+
+    func perform(_ s: [Step]) {
+        steps = s
+        go(.act, for: s.reduce(0) { $0 + $1.seconds })
     }
 
     let name: String
@@ -268,11 +277,24 @@ final class Pet {
             float("!", color: .white)
             return
         }
-        switch kind {
-        case .cat: go(.react("meow_0"), for: 1.3)
-        case .dog: go(.react(Bool.random() ? "tug" : "pant"), for: 2.2)
+        react()
+    }
+
+    /// Each pet's own way of answering a click.
+    func react() {
+        let pink = NSColor(red: 0.95, green: 0.42, blue: 0.5, alpha: 1)
+        switch name {
+        case "thea":
+            // Thea does not want to be touched.
+            perform([Step(pose: "hiss", seconds: 0.7, fps: 4), Step(pose: "swipe", seconds: 1.1, fps: 5), Step(pose: "hiss", seconds: 0.6, fps: 4)])
+            float("HSSS!", color: NSColor(red: 1, green: 0.45, blue: 0.4, alpha: 1))
+        case "ivan":
+            perform([Step(pose: "meow", seconds: 0.9, fps: 1), Step(pose: "lick", seconds: 2.6, fps: 2.5)])
+            float("mew ♪", color: pink)
+        default:
+            perform([Step(pose: "happy", seconds: 2.6, fps: 9)])
+            float("♥", color: pink)
         }
-        float("♥", color: NSColor(red: 0.95, green: 0.42, blue: 0.5, alpha: 1))
     }
 
     func carried(to origin: NSPoint) {
@@ -282,7 +304,7 @@ final class Pet {
         x = origin.x + w / 2
         y = origin.y + pawGap * scale
         place()
-        show(kind == .cat ? "meow_0" : "pant_1")
+        show(name == "thea" ? "hiss_0" : kind == .cat ? "meow_0" : "happy_\(Int(ProcessInfo.processInfo.systemUptime * 9) % 3)")
     }
 
     func dropped() {
@@ -393,6 +415,16 @@ final class Pet {
         case let .special(pose):
             let n = max(1, book.count(name, pose))
             show("\(pose)_\(Int(clock / 0.8) % n)")
+        case .act:
+            var t = clock
+            for (i, step) in steps.enumerated() {
+                if t < step.seconds || i == steps.count - 1 {
+                    let n = max(1, book.count(name, step.pose))
+                    show("\(step.pose)_\(Int(min(t, step.seconds - 0.01) * step.fps) % n)")
+                    break
+                }
+                t -= step.seconds
+            }
         default:
             break
         }
@@ -413,6 +445,11 @@ final class Pet {
 
     func decide(world: World, others: [Pet]) {
         guard let id = surfaceID, let here = world.surface(id: id) else { state = .fall; return }
+        if name == "thea", let kai = others.first(where: { $0.name == "kai" && $0.surfaceID == id }), abs(kai.x - x) < 70 * scale / 2 {
+            perform([Step(pose: "hiss", seconds: 1.2, fps: 4)])
+            float("hss", color: NSColor(red: 1, green: 0.45, blue: 0.4, alpha: 1))
+            return
+        }
         if userIdleSeconds() > 90 { go(.sleep, for: 20); return }
         let roll = Double.random(in: 0..<1)
         let spanX = { CGFloat.random(in: here.minX...max(here.minX + 1, here.maxX)) }
@@ -442,12 +479,15 @@ final class Pet {
         case ..<0.86:
             go(.sleep, for: .random(in: 15...40))
         case ..<0.93:
-            if kind == .dog {
-                go(.special(Bool.random() ? "pant" : "tug"), for: 4)
-            } else if hasSplat {
-                go(.special("splat"), for: 6)
-            } else {
-                go(.react("meow_0"), for: 1.2)
+            switch name {
+            case "kai":
+                if Bool.random() { perform([Step(pose: "happy", seconds: 2.4, fps: 9)]) } else { go(.special(Bool.random() ? "pant" : "tug"), for: 4) }
+            case "ivan":
+                // Ivan grooms a lot, and sometimes flops flat
+                if Double.random(in: 0..<1) < 0.65 { perform([Step(pose: "lick", seconds: 4, fps: 2.5)]) } else { go(.special("splat"), for: 6) }
+            default:
+                // Thea: a quick wash, or a grumpy stare
+                if Bool.random() { perform([Step(pose: "lick", seconds: 3, fps: 2.5)]) } else { go(.sit, for: 4); float("hmph", color: NSColor(white: 0.9, alpha: 1)) }
             }
         default:
             // Kai chases a cat on the same surface; cats scatter.

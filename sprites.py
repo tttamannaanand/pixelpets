@@ -85,13 +85,16 @@ def _inside(x, y, pts):
 # ---------------------------------------------------------------- cats
 
 
-def cat_head(g, cy, big_ears=False, ear_drop=0.0):
+def cat_head(g, cy, big_ears=False, ear_drop=0.0, flat=False):
     g.ellipse(CX, cy, 8.8, 7.2, "head")
     g.ellipse(CX, cy + 4.3, 3.2, 2.0, "muzzle")
     e = 1.08 if big_ears else 1.0
     tip = cy - 10.8 * e + ear_drop
-    g.mirror_poly([(CX - 8.6, cy - 1.2), (CX - 7.4 * e, tip), (CX - 6.6 * e, tip + 0.6), (CX - 2.2, cy - 6.4)], "ear")
-    return {"head_cy": cy + 1, "eyes_y": int(cy + 1), "ear_tip": tip, "big_ears": big_ears}
+    if flat:  # ears pinned back and out to the sides
+        g.mirror_poly([(CX - 7.6, cy - 1.6), (CX - 12.4 * e, cy - 4.4), (CX - 11.6 * e, cy - 5.6), (CX - 5.6, cy - 5.8)], "ear")
+    else:
+        g.mirror_poly([(CX - 8.6, cy - 1.2), (CX - 7.4 * e, tip), (CX - 6.6 * e, tip + 0.6), (CX - 2.2, cy - 6.4)], "ear")
+    return {"head_cy": cy + 1, "eyes_y": int(cy + 1), "ear_tip": tip, "big_ears": big_ears, "flat": flat}
 
 
 def cat_sit(g, frame=0, big_ears=False):
@@ -104,6 +107,51 @@ def cat_sit(g, frame=0, big_ears=False):
     tails = [[(CX + 5, 31), (CX + 9, 30), (CX + 11, 27), (CX + 11, 24)], [(CX + 5, 31), (CX + 9, 31), (CX + 12, 29), (CX + 13, 26)]]
     g.line(tails[frame % 2], "tail", 2)
     return cat_head(g, 14, big_ears)
+
+
+def cat_hiss(g, frame=0, big_ears=False):
+    """Puffed up, ears flat, tail like a bottle brush."""
+    g.ellipse(CX, 26, 7.8, 6.2, "body")
+    g.ellipse(CX, 26, 3, 3.6, "chest")
+    g.rect(CX - 5, 28, CX - 3, GROUND - 1, "leg")
+    g.rect(CX + 3, 28, CX + 5, GROUND - 1, "leg")
+    g.rect(CX - 6, GROUND, CX - 3, GROUND, "paw")
+    g.rect(CX + 3, GROUND, CX + 6, GROUND, "paw")
+    sway = frame % 2
+    g.line([(CX + 6, 30), (CX + 10, 26), (CX + 11 + sway, 20), (CX + 11 + sway, 13)], "tail", 3)
+    p = cat_head(g, 14, big_ears, flat=True)
+    return p | {"angry": True, "hiss": True}
+
+
+def cat_swipe(g, frame=0, big_ears=False):
+    """Claws out: paw up, then a swipe across."""
+    p = cat_hiss(g, 0, big_ears)
+    hy = p["head_cy"]
+    if frame % 2 == 0:
+        g.line([(CX - 5, 27), (CX - 10, 21), (CX - 12, hy - 3)], "leg", 3)
+        g.rect(CX - 14, hy - 5, CX - 11, hy - 3, "paw")
+        p["claws"] = [(CX - 14, hy - 6), (CX - 13, hy - 7), (CX - 12, hy - 7), (CX - 11, hy - 6)]
+    else:
+        g.line([(CX - 5, 27), (CX + 1, 22), (CX + 9, hy + 2)], "leg", 3)
+        g.rect(CX + 9, hy, CX + 12, hy + 2, "paw")
+        p["claws"] = [(CX + 13, hy - 1), (CX + 13, hy), (CX + 13, hy + 1), (CX + 13, hy + 2)]
+        p["slash"] = True
+    return p
+
+
+def cat_lick(g, frame=0, big_ears=False):
+    """Grooming: paw up to the mouth, eyes shut, tongue out."""
+    g.ellipse(CX, 26.5, 6.6, 5.4, "body")
+    g.ellipse(CX, 26, 3, 3.6, "chest")
+    g.rect(CX - 4, 28, CX - 2, GROUND - 1, "leg")
+    g.rect(CX - 5, GROUND, CX - 2, GROUND, "paw")
+    g.line([(CX + 5, 31), (CX + 9, 31), (CX + 12, 29), (CX + 13, 26)], "tail", 2)
+    p = cat_head(g, 14, big_ears)
+    hy = p["head_cy"]
+    lift = 0 if frame % 2 == 0 else 2
+    g.line([(CX + 3, 29), (CX + 3, 24), (CX + 1, hy + 5 + lift)], "leg", 3)
+    g.rect(CX - 1, hy + 3 + lift, CX + 2, hy + 5 + lift, "paw")
+    return p | {"closed": True, "lick": frame % 2 == 0, "nomouth": True}
 
 
 def cat_stand(g, frame=0, big_ears=False):
@@ -178,6 +226,20 @@ def dog_sit(g, frame=0, rope=False, tongue=False):
     p["rope"] = rope
     p["tongue"] = tongue
     return p
+
+
+def dog_happy(g, frame=0):
+    """Tail going, tongue out, eyes squeezed shut, a little bounce."""
+    bounce = frame % 2
+    dog_tail(g, frame * 2)
+    g.ellipse(CX, 26.5 - bounce * 0.5, 7, 5.4, "body")
+    g.ellipse(CX, 26, 3.2, 3.6, "chest")
+    g.rect(CX - 5, 28, CX - 3, GROUND - 1, "leg")
+    g.rect(CX + 3, 28, CX + 5, GROUND - 1, "leg")
+    g.rect(CX - 6, GROUND, CX - 3, GROUND, "paw")
+    g.rect(CX + 3, GROUND, CX + 6, GROUND, "paw")
+    p = dog_head(g, 13 - bounce, flap=1 + frame % 2)
+    return p | {"happy": True, "bigtongue": True}
 
 
 def dog_stand(g, frame=0, rope=False):
@@ -299,7 +361,7 @@ def face(name, g, p, pal, look):
                 set_(x, y, pal["dark"])
         # inner ears
         tip = int(p["ear_tip"])
-        for k, w in ((3, 1), (4, 2), (5, 2)):
+        for k, w in (() if p.get("flat") else ((3, 1), (4, 2), (5, 2))):
             for j in range(w):
                 set_(CX - 6 + j, tip + k, pal["inner"])
                 set_(CX + 5 - j, tip + k, pal["inner"])
@@ -324,12 +386,38 @@ def face(name, g, p, pal, look):
                             set_(pc + w, y + dy, pal["pupil"])
                 set_(pc + (1 if look < 0 else 0), y + 1, (255, 255, 255, 255))
                 set_(x - 1 if x < CX else x + 4, y + 3, pal["dark"])  # eyeliner flick
+                if p.get("angry"):
+                    # narrowed, glaring: lid comes down at a slant, pupil a thin slit
+                    left = x < CX
+                    for dx in range(4):
+                        set_(x + dx, y, pal["dark"])
+                    set_(x + (3 if left else 0), y + 1, pal["dark"])
+                    set_(x + (2 if left else 1), y - 1, pal["dark"])
+                    set_(x + (3 if left else 0), y - 1, pal["dark"])
+                    for dy in (1, 2, 3):
+                        for dx in range(4):
+                            if g.color.get((x + dx, y + dy)) == pal["pupil"]:
+                                set_(x + dx, y + dy, pal["eye"])
+                    set_(x + (1 if left else 2), y + 1, pal["pupil"])
+                    set_(x + (1 if left else 2), y + 2, pal["pupil"])
         set_(CX - 1, hy + 2, pal["nose"])
         set_(CX, hy + 2, pal["nose"])
         # blush
         for bx in (CX - 8, CX - 7, CX + 6, CX + 7):
             set_(bx, hy + 2, (240, 150, 150, 255))
-        if p.get("meow"):
+        if p.get("hiss"):
+            for y in (hy + 3, hy + 4, hy + 5):
+                for dx in range(-3, 3):
+                    set_(CX + dx, y, pal["mouth"])
+            for dx in range(-2, 2):
+                set_(CX + dx, hy + 6, pal["mouth"])
+            for fx_, fy in ((CX - 3, hy + 3), (CX - 3, hy + 4), (CX + 2, hy + 3), (CX + 2, hy + 4)):
+                set_(fx_, fy, (252, 252, 248, 255))  # fangs
+        elif p.get("nomouth"):
+            if p.get("lick"):
+                set_(CX - 2, hy + 4, (232, 112, 132, 255))
+                set_(CX - 2, hy + 5, (232, 112, 132, 255))
+        elif p.get("meow"):
             for dx in (-2, -1, 0, 1):
                 set_(CX + dx, hy + 4, pal["mouth"])
             set_(CX - 1, hy + 5, pal["mouth"])
@@ -343,10 +431,20 @@ def face(name, g, p, pal, look):
         for s in (-1, 1):
             for k in range(2):
                 x = CX + s * (6 + k) - (1 if s > 0 else 0)
-                set_(x, hy + 4, (245, 240, 232, 255))
+                set_(x, hy + 4 - (1 if p.get("angry") else 0), (245, 240, 232, 255))
+        for cx_, cy_ in p.get("claws", []):
+            set_(cx_, cy_, (252, 252, 248, 255))
+        if p.get("slash"):
+            for k in range(3):
+                for j in range(4):
+                    set_(CX + 14 + k * 2 - j // 2, hy - 6 + j + k, (255, 255, 255, 230))
     else:
         eyes = [(CX - 5, ey - 1), (CX + 2, ey - 1)]
-        if p.get("closed"):
+        if p.get("happy"):
+            for x, y in eyes:
+                for px_, py_ in ((x - 1, y + 2), (x, y + 1), (x + 1, y), (x + 2, y + 1), (x + 3, y + 2)):
+                    set_(px_, py_, (170, 146, 130, 255))
+        elif p.get("closed"):
             for x, y in eyes:
                 set_(x, y + 1, pal["sheen"])
                 set_(x + 1, y + 1, pal["sheen"])
@@ -380,10 +478,17 @@ def face(name, g, p, pal, look):
         set_(CX, hy + 4, pal["rim"])
         for dx in (-3, -2, 1, 2):
             set_(CX + dx, hy + 5, pal["rim"])
-        if p.get("tongue"):
-            for dy in (6, 7):
+        if p.get("tongue") or p.get("bigtongue"):
+            rows = (6, 7, 8, 9) if p.get("bigtongue") else (6, 7)
+            for dy in rows:
                 set_(CX - 1, hy + dy, pal["tongue"])
                 set_(CX, hy + dy, pal["tongue"])
+            if p.get("bigtongue"):
+                for dy in (6, 7, 8):
+                    set_(CX - 2, hy + dy, pal["tongue"])
+                    set_(CX + 1, hy + dy, pal["tongue"])
+                set_(CX - 1, hy + 7, (196, 84, 104, 255))  # the middle line of the tongue
+                set_(CX - 1, hy + 8, (196, 84, 104, 255))
         if p.get("rope"):
             cy = hy + 8
             for a in range(0, 360, 8):
@@ -403,6 +508,9 @@ def poses(name: str):
             "walk": [lambda g, i=i: cat_stand(g, i, big) for i in range(4)],
             "sleep": [lambda g, i=i: cat_loaf(g, i, big) for i in range(2)],
             "meow": [lambda g: cat_sit(g, 0, big) | {"meow": True}],
+            "lick": [lambda g, i=i: cat_lick(g, i, big) for i in range(2)],
+            "hiss": [lambda g, i=i: cat_hiss(g, i, big) for i in range(2)],
+            "swipe": [lambda g, i=i: cat_swipe(g, i, big) for i in range(2)],
         }
         if big:
             p["splat"] = [lambda g, i=i: cat_splat(g, i) for i in range(2)]
@@ -415,6 +523,7 @@ def poses(name: str):
         "sleep": [lambda g, i=i: dog_sleep(g, i) for i in range(2)],
         "tug": [lambda g, i=i: dog_sit(g, i, rope=True) for i in range(3)],
         "carry": [lambda g, i=i: dog_stand(g, i, rope=True) for i in range(4)],
+        "happy": [lambda g, i=i: dog_happy(g, i) for i in range(3)],
     }
 
 

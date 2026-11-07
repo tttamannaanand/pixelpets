@@ -6,9 +6,9 @@ They live along the top of your screen, just under the menu bar (or, with "Hop o
 
 | | |
 |---|---|
-| **Thea** | dark tabby, black stripes, amber eyes. Meows when you click her. |
-| **Ivan** | grey tabby, green eyes. Flops flat and reaches for things. |
-| **Kai** | black puppy, floppy ears. Pants, tugs his red rope, and chases the cats. |
+| **Thea** | dark tabby, black stripes, amber eyes. Do not touch: click her and she flattens her ears, puffs up, hisses and swipes at you, claws out. Hisses at Kai if he gets too close. |
+| **Ivan** | grey tabby, green eyes. Click her and she meows, then sits and licks her paw. Grooms a lot, and sometimes flops flat. |
+| **Kai** | black puppy, floppy ears. Click him and he wags like mad with his tongue out. Tugs his red rope, and chases the cats. |
 
 ## Use it
 
