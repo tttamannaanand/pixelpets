@@ -41,6 +41,94 @@ final class SpriteBook {
     }
 }
 
+// MARK: - Sounds
+
+@MainActor
+final class SoundBank {
+    private var sounds: [String: NSSound] = [:]
+    var on = true
+
+    init(root: URL) {
+        for name in ["hiss", "mew", "boof", "tap"] {
+            if let s = NSSound(contentsOf: root.appendingPathComponent("\(name).wav"), byReference: false) { sounds[name] = s }
+        }
+        if let purr = NSSound(named: "Purr") { sounds["purr"] = purr }
+    }
+
+    func play(_ name: String, volume: Float = 0.5) {
+        guard on, let base = sounds[name], let s = base.copy() as? NSSound else { return }
+        s.volume = volume
+        s.play()
+    }
+}
+
+// MARK: - Things to knock off the ledge
+
+@MainActor
+final class Prop {
+    let kind: String
+    let window = PetWindow(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    let layer = CALayer()
+    var x: CGFloat, y: CGFloat, vx: CGFloat = 0, vy: CGFloat = 0, spin: CGFloat = 0, angle: CGFloat = 0
+    var falling = false
+    var claimedBy: String?
+    let size: CGSize
+    let born = ProcessInfo.processInfo.systemUptime
+
+    init(kind: String, image: CGImage, scale: CGFloat, at p: CGPoint) {
+        self.kind = kind
+        x = p.x
+        y = p.y
+        size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        let side = max(size.width, size.height) * 1.5
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.level = .floating
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        let v = NSView(frame: CGRect(x: 0, y: 0, width: side, height: side))
+        v.wantsLayer = true
+        layer.contents = image
+        layer.magnificationFilter = .nearest
+        layer.frame = CGRect(x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height)
+        v.layer?.addSublayer(layer)
+        window.contentView = v
+        window.setFrame(CGRect(x: 0, y: 0, width: side, height: side), display: false)
+        place()
+        window.orderFrontRegardless()
+    }
+
+    func place() {
+        let side = window.frame.width
+        window.setFrameOrigin(CGPoint(x: (x - side / 2).rounded(), y: (y - (side - size.height) / 2).rounded()))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.setAffineTransform(CGAffineTransform(rotationAngle: angle))
+        CATransaction.commit()
+    }
+
+    func knock(toward dir: CGFloat) {
+        falling = true
+        vx = dir * .random(in: 90...170)
+        vy = .random(in: 120...220)
+        spin = dir * -.random(in: 4...9)
+    }
+
+    /// Returns false once it has fallen off the bottom of the screen.
+    func tick(_ dt: Double) -> Bool {
+        guard falling else { return true }
+        vy -= 1800 * dt
+        x += vx * dt
+        y += vy * dt
+        angle += spin * dt
+        place()
+        let bottom = NSScreen.screens.map(\.frame.minY).min() ?? 0
+        if y < bottom - 80 { window.orderOut(nil); return false }
+        return true
+    }
+}
+
 // MARK: - Things a pet can stand on
 
 struct Surface: Equatable {
@@ -164,11 +252,16 @@ final class Pet {
     /// A little routine: each step is a pose, how long it lasts, and frames per second.
     struct Step { var pose: String; var seconds: Double; var fps: Double }
     var steps: [Step] = []
+    var purrAt: Double?
+    var prop: Prop? // the thing this cat is going to knock off
+    var fetching = false // Kai is bringing his rope over
 
     func perform(_ s: [Step]) {
         steps = s
         go(.act, for: s.reduce(0) { $0 + $1.seconds })
     }
+
+    var hasBap: Bool { book.count(name, "bap") > 0 }
 
     let name: String
     let kind: Kind
@@ -287,12 +380,16 @@ final class Pet {
         case "thea":
             // Thea does not want to be touched.
             perform([Step(pose: "hiss", seconds: 0.7, fps: 4), Step(pose: "swipe", seconds: 1.1, fps: 5), Step(pose: "hiss", seconds: 0.6, fps: 4)])
+            app?.sounds.play("hiss", volume: 0.45)
             float("HSSS!", color: NSColor(red: 1, green: 0.45, blue: 0.4, alpha: 1))
         case "ivan":
             perform([Step(pose: "meow", seconds: 0.9, fps: 1), Step(pose: "lick", seconds: 2.6, fps: 2.5)])
+            app?.sounds.play("mew", volume: 0.55)
+            purrAt = 0.9
             float("mew ♪", color: pink)
         default:
             perform([Step(pose: "happy", seconds: 2.6, fps: 9)])
+            app?.sounds.play("boof", volume: 0.4)
             float("♥", color: pink)
         }
     }
@@ -400,10 +497,18 @@ final class Pet {
             let running: Bool = { if case .run = state { return true }; return false }()
             let v = running ? speed * 3.2 : speed
             let step = CGFloat(dt) * v
-            if abs(tx - x) <= step { x = tx; go(.sit, for: .random(in: 2...6)) } else { x += tx > x ? step : -step }
+            if abs(tx - x) <= step {
+                x = tx
+                arrived()
+            } else {
+                x += tx > x ? step : -step
+            }
             let fps = running ? 14.0 : 7.0
-            show("walk_\(Int(clock * fps) % 4)")
-            if kind == .dog, Int(clock) % 7 == 3, !running { show("carry_\(Int(clock * fps) % 4)") }
+            if fetching || (kind == .dog && Int(clock) % 7 == 3 && !running) {
+                show("carry_\(Int(clock * fps) % 4)")
+            } else {
+                show("walk_\(Int(clock * fps) % 4)")
+            }
             place()
         case .sleep:
             show("sleep_\(Int(clock / 1.1) % 2)")
@@ -416,11 +521,19 @@ final class Pet {
             let n = max(1, book.count(name, pose))
             show("\(pose)_\(Int(clock / 0.8) % n)")
         case .act:
+            if let at = purrAt, clock >= at { purrAt = nil; app?.sounds.play("purr", volume: 0.35) }
+            if let p = prop, steps.first?.pose == "bap", clock > 0.55, !p.falling {
+                p.knock(toward: 1)
+                app?.sounds.play("tap", volume: 0.5)
+                float(["oops", "bap", "…"].randomElement()!, color: NSColor(white: 0.95, alpha: 1))
+                prop = nil
+            }
             var t = clock
             for (i, step) in steps.enumerated() {
                 if t < step.seconds || i == steps.count - 1 {
                     let n = max(1, book.count(name, step.pose))
-                    show("\(step.pose)_\(Int(min(t, step.seconds - 0.01) * step.fps) % n)")
+                    let f = step.pose == "bap" ? min(i, 1) : Int(min(t, step.seconds - 0.01) * step.fps) % n
+                    show("\(step.pose)_\(f)")
                     break
                 }
                 t -= step.seconds
@@ -432,6 +545,24 @@ final class Pet {
         if timeLeft <= 0 && state != .sleep || (state == .sleep && timeLeft <= 0 && userIdleSeconds() < 60) {
             decide(world: world, others: others)
         }
+    }
+
+    func arrived() {
+        if let p = prop, !p.falling, abs(p.x - x) < 60 * scale {
+            // wind up, bap, then sit there looking innocent
+            perform([Step(pose: "bap", seconds: 0.55, fps: 0), Step(pose: "bap", seconds: 0.6, fps: 0), Step(pose: "sit", seconds: 1.4, fps: 1)])
+            return
+        }
+        prop?.claimedBy = nil
+        prop = nil
+        if fetching {
+            fetching = false
+            perform([Step(pose: "tug", seconds: 3, fps: 6)])
+            float("play?", color: NSColor(white: 0.95, alpha: 1))
+            app?.sounds.play("boof", volume: 0.3)
+            return
+        }
+        go(.sit, for: .random(in: 2...6))
     }
 
     func land(on s: Surface?) {
@@ -451,6 +582,24 @@ final class Pet {
             return
         }
         if userIdleSeconds() > 90 { go(.sleep, for: 20); return }
+        // A cat can't resist something sitting on the ledge.
+        if kind == .cat, hasBap, let p = app?.props.first(where: { !$0.falling && $0.claimedBy == nil && abs($0.y - y) < 4 }),
+           ProcessInfo.processInfo.systemUptime - p.born > 6, Double.random(in: 0..<1) < 0.6 {
+            p.claimedBy = name
+            prop = p
+            // her bapping paw is on her right, so she always comes at it from the left
+            go(.walk(max(p.x - 15 * scale, here.minX)), for: 40)
+            return
+        }
+        // Kai brings his rope to wherever your cursor is.
+        if name == "kai", Double.random(in: 0..<1) < 0.12 {
+            let mx = min(max(NSEvent.mouseLocation.x, here.minX), here.maxX)
+            if abs(mx - x) > 40 {
+                fetching = true
+                go(.walk(mx), for: 40)
+                return
+            }
+        }
         let roll = Double.random(in: 0..<1)
         let spanX = { CGFloat.random(in: here.minX...max(here.minX + 1, here.maxX)) }
         switch roll {
@@ -515,6 +664,9 @@ final class Pet {
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let names: [(String, Kind)] = [("thea", .cat), ("ivan", .cat), ("kai", .dog)]
     var pets: [String: Pet] = [:]
+    var props: [Prop] = []
+    var sounds: SoundBank!
+    var nextProp: TimeInterval = ProcessInfo.processInfo.systemUptime + (CommandLine.arguments.contains("--demo") ? 3 : .random(in: 40...90))
     let world = World()
     var book: SpriteBook!
     var status: NSStatusItem!
@@ -536,6 +688,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let root = Bundle.main.resourceURL!.appendingPathComponent("sprites")
         book = SpriteBook(root: root)
+        sounds = SoundBank(root: Bundle.main.resourceURL!.appendingPathComponent("sounds"))
+        sounds.on = defaults.object(forKey: "sounds") as? Bool ?? true
         world.petHeight = (spriteH - 2) * scale
         world.useWindows = defaults.bool(forKey: "windows")
         world.refresh(force: true)
@@ -569,6 +723,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         world.refresh()
         let all = Array(pets.values)
         for p in all { p.tick(1.0 / 30, world: world, others: all.filter { $0 !== p }, quiet: quiet) }
+        props = props.filter { $0.tick(1.0 / 30) }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now > nextProp {
+            nextProp = now + .random(in: 120...300)
+            spawnProp()
+        }
+    }
+
+    /// Leave something on the ledge for the cats to find.
+    func spawnProp() {
+        guard props.filter({ !$0.falling }).isEmpty, !quiet,
+              pets.values.contains(where: { $0.kind == .cat }),
+              let cat = pets.values.first(where: { $0.kind == .cat && $0.surfaceID != nil }),
+              let ledge = world.surface(id: cat.surfaceID!) else { return }
+        let kind = ["pencil", "mug", "yarn"].randomElement()!
+        guard let img = book.image("props", kind) else { return }
+        let x = CGFloat.random(in: (ledge.minX + 60)...max(ledge.minX + 61, ledge.maxX - 60))
+        props.append(Prop(kind: kind, image: img, scale: scale, at: CGPoint(x: x, y: ledge.top)))
     }
 
     // MARK: menu
@@ -592,6 +764,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let here = NSMenuItem(title: "Call everyone here", action: #selector(callHere), keyEquivalent: "")
         here.target = self
         menu.addItem(here)
+        let snd = NSMenuItem(title: "Sounds", action: #selector(toggleSounds), keyEquivalent: "")
+        snd.target = self
+        snd.state = sounds.on ? .on : .off
+        menu.addItem(snd)
+        let drop = NSMenuItem(title: "Leave something for the cats", action: #selector(dropProp), keyEquivalent: "")
+        drop.target = self
+        menu.addItem(drop)
         let nap = NSMenuItem(title: "Nap time (quiet mode)", action: #selector(toggleQuiet), keyEquivalent: "")
         nap.target = self
         nap.state = quiet ? .on : .off
@@ -647,6 +826,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             p.state = .fall
             p.place()
         }
+    }
+
+    @objc func toggleSounds() {
+        sounds.on.toggle()
+        defaults.set(sounds.on, forKey: "sounds")
+    }
+
+    @objc func dropProp() {
+        spawnProp()
+        if let p = props.last { p.claimedBy = nil }
     }
 
     @objc func toggleWindows() {

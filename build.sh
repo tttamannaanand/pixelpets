@@ -9,6 +9,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -swift-version 5 app/main.swift -o "$APP/Contents/MacOS/PixelPets" -framework AppKit -framework ServiceManagement
 cp -R sprites "$APP/Contents/Resources/sprites"
+.venv/bin/python make_sounds.py >/dev/null
+cp -R sounds "$APP/Contents/Resources/sounds"
 rm -f "$APP/Contents/Resources/sprites/preview.png"
 .venv/bin/python make_icon.py "$APP/Contents/Resources"
 cat > "$APP/Contents/Info.plist" <<PLIST

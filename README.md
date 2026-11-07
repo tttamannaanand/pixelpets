@@ -8,13 +8,17 @@ They live along the top of your screen, just under the menu bar (or, with "Hop o
 |---|---|
 | **Thea** | dark tabby, black stripes, amber eyes. Do not touch: click her and she flattens her ears, puffs up, hisses and swipes at you, claws out. Hisses at Kai if he gets too close. |
 | **Ivan** | grey tabby, green eyes. Click her and she meows, then sits and licks her paw. Grooms a lot, and sometimes flops flat. |
-| **Kai** | black puppy, floppy ears. Click him and he wags like mad with his tongue out. Tugs his red rope, and chases the cats. |
+| **Kai** | black puppy, floppy ears. Click him and he wags like mad with his tongue out. Brings his red rope over to your cursor to play, and chases the cats. |
+
+Every so often a pink pencil, a coffee mug or a ball of yarn turns up on the ledge. The cats will find it, and knock it off. Sounds (Thea's hiss, Ivan's mew and purr, Kai's boof) are synthesised from scratch by `make_sounds.py` and can be turned off in the menu.
 
 ## Use it
 
 Click the pet in your menu bar to:
 - show or hide each pet
 - call everyone to your cursor
+- turn sounds on or off
+- leave something on the ledge for the cats
 - turn on nap time (quiet mode)
 - let them hop onto your windows
 - change the size

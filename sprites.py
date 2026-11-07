@@ -139,6 +139,23 @@ def cat_swipe(g, frame=0, big_ears=False):
     return p
 
 
+def cat_bap(g, frame=0, big_ears=False):
+    """A casual bap: one paw out to the side, knocking something off the ledge."""
+    g.ellipse(CX, 26.5, 6.6, 5.4, "body")
+    g.ellipse(CX, 26, 3, 3.6, "chest")
+    g.rect(CX - 4, 28, CX - 2, GROUND - 1, "leg")
+    g.rect(CX - 5, GROUND, CX - 2, GROUND, "paw")
+    g.line([(CX - 5, 31), (CX - 9, 31), (CX - 12, 29), (CX - 13, 26)], "tail", 2)
+    p = cat_head(g, 14, big_ears)
+    if frame % 2 == 0:  # paw raised, winding up
+        g.line([(CX + 3, 28), (CX + 7, 24), (CX + 10, 21)], "leg", 3)
+        g.rect(CX + 10, 19, CX + 12, 21, "paw")
+    else:  # bap
+        g.line([(CX + 3, 28), (CX + 9, 28), (CX + 14, 29)], "leg", 3)
+        g.rect(CX + 14, 28, CX + 16, 30, "paw")
+    return p
+
+
 def cat_lick(g, frame=0, big_ears=False):
     """Grooming: paw up to the mouth, eyes shut, tongue out."""
     g.ellipse(CX, 26.5, 6.6, 5.4, "body")
@@ -511,6 +528,7 @@ def poses(name: str):
             "lick": [lambda g, i=i: cat_lick(g, i, big) for i in range(2)],
             "hiss": [lambda g, i=i: cat_hiss(g, i, big) for i in range(2)],
             "swipe": [lambda g, i=i: cat_swipe(g, i, big) for i in range(2)],
+            "bap": [lambda g, i=i: cat_bap(g, i, big) for i in range(2)],
         }
         if big:
             p["splat"] = [lambda g, i=i: cat_splat(g, i) for i in range(2)]
@@ -525,6 +543,58 @@ def poses(name: str):
         "carry": [lambda g, i=i: dog_stand(g, i, rope=True) for i in range(4)],
         "happy": [lambda g, i=i: dog_happy(g, i) for i in range(3)],
     }
+
+
+PROPS = {
+    # little things for the cats to knock off the top of the screen
+    "pencil": [
+        "..............",
+        "............kk",
+        "KPPPPPPPPPPPkG",
+        "KPPpPPpPPpPPkG",
+        "KppppppppppPkG",
+        "............kk",
+    ],
+    "mug": [
+        "..s.s....",
+        ".s.s.....",
+        "OWWWWWO..",
+        "OWccccWOO",
+        "OWWWWWWOW",
+        "OWWRRWWOO",
+        "OWWWWWWO.",
+        ".OWWWWO..",
+        "..OOOO...",
+    ],
+    "yarn": [
+        "..OOOO...",
+        ".ORrRrO..",
+        "ORrRRrRO.",
+        "ORRrRRrO.",
+        "OrRRrRRO.",
+        ".ORrRRO..",
+        "..OOOO.rr",
+        "........r",
+    ],
+}
+PROP_COLORS = {
+    "K": (60, 50, 50, 255), "P": (246, 160, 196, 255), "p": (220, 120, 162, 255), "k": (230, 210, 180, 255), "G": (90, 90, 96, 255),
+    "O": (40, 32, 30, 255), "W": (248, 244, 236, 255), "c": (120, 76, 48, 255), "R": (214, 64, 74, 255), "r": (170, 40, 52, 255),
+    "s": (220, 220, 220, 160),
+}
+
+
+def props():
+    d = OUT / "props"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, rows in PROPS.items():
+        w = max(len(r) for r in rows)
+        img = Image.new("RGBA", (w, len(rows)), (0, 0, 0, 0))
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row):
+                if ch in PROP_COLORS:
+                    img.putpixel((x, y), PROP_COLORS[ch])
+        img.save(d / f"{name}.png")
 
 
 def render(g: Grid) -> Image.Image:
@@ -594,4 +664,5 @@ def preview(sheets, scale=7, path=OUT / "preview.png"):
 
 
 if __name__ == "__main__":
+    props()
     print(preview(build()))
