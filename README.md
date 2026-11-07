@@ -1,0 +1,32 @@
+# Pixel Pets
+
+Thea, Ivan and Kai, as tiny pixel pets that live on your Mac.
+
+They walk along the bottom of your screen and the tops of your windows, jump between them, fall when you move a window out from under them, watch your cursor, nap when you're away, and react when you click or pick them up.
+
+| | |
+|---|---|
+| **Thea** | dark tabby, black stripes, amber eyes. Meows when you click her. |
+| **Ivan** | grey tabby, green eyes. Flops flat and reaches for things. |
+| **Kai** | black puppy, floppy ears. Pants, tugs his red rope, and chases the cats. |
+
+## Use it
+
+Click the pet in your menu bar to:
+- show or hide each pet
+- call everyone to your cursor
+- turn on nap time (quiet mode)
+- change the size
+- start at login
+
+Click a pet to pet it. Drag a pet to pick it up and drop it anywhere. Right-click a pet for the menu.
+
+## Build it
+
+```bash
+./build.sh          # draws the sprites and builds build/Pixel Pets.app
+```
+
+- `sprites.py` draws every sprite from shapes and the pets' colours (Python + Pillow).
+- `app/main.swift` is the whole app (Swift, AppKit, no dependencies).
+- `make_icon.py` makes the app icon.
