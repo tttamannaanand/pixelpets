@@ -10,6 +10,10 @@ They live along the top of your screen, just under the menu bar (or, with "Hop o
 | **Ivan** | grey tabby, green eyes. Click her and she meows, then sits and licks her paw. Grooms a lot, and sometimes flops flat. |
 | **Kai** | black puppy, floppy ears. Click him and he wags like mad with his tongue out. Brings his red rope over to your cursor to play, and chases the cats. |
 
+**Feeding time:** pick it from the menu and a bowl for each pet drops near your cursor: fish for the cats, a bone for Kai. They run over and eat it bite by bite, then the cats wash and Kai wags.
+
+**Cuddle naps:** when one cat is asleep, the other may climb up and curl up on top of her, like Ivan does with Thea. Wake the bottom cat and the top one slides off. "Cuddle nap" in the menu starts one.
+
 Every so often a pink pencil, a coffee mug or a ball of yarn turns up on the ledge. The cats will find it, and knock it off. Sounds (Thea's hiss, Ivan's mew and purr, Kai's boof) are synthesised from scratch by `make_sounds.py` and can be turned off in the menu.
 
 ## Use it
@@ -17,6 +21,8 @@ Every so often a pink pencil, a coffee mug or a ball of yarn turns up on the led
 Click the pet in your menu bar to:
 - show or hide each pet
 - call everyone to your cursor
+- feeding time
+- a cuddle nap
 - turn sounds on or off
 - leave something on the ledge for the cats
 - turn on nap time (quiet mode)

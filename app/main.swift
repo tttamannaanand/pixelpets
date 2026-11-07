@@ -71,6 +71,7 @@ final class Prop {
     let layer = CALayer()
     var x: CGFloat, y: CGFloat, vx: CGFloat = 0, vy: CGFloat = 0, spin: CGFloat = 0, angle: CGFloat = 0
     var falling = false
+    var landTop: CGFloat? // for food bowls: stop when they reach the ledge
     var claimedBy: String?
     let size: CGSize
     let born = ProcessInfo.processInfo.systemUptime
@@ -108,6 +109,27 @@ final class Prop {
         CATransaction.commit()
     }
 
+    func setImage(_ img: CGImage) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contents = img
+        CATransaction.commit()
+    }
+
+    func vanish(after delay: Double = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.6
+                self.window.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated { self?.gone = true; self?.window.orderOut(nil) }
+            })
+        }
+    }
+
+    var gone = false
+
     func knock(toward dir: CGFloat) {
         falling = true
         vx = dir * .random(in: 90...170)
@@ -117,11 +139,17 @@ final class Prop {
 
     /// Returns false once it has fallen off the bottom of the screen.
     func tick(_ dt: Double) -> Bool {
+        if gone { return false }
         guard falling else { return true }
         vy -= 1800 * dt
         x += vx * dt
         y += vy * dt
         angle += spin * dt
+        if let top = landTop, y <= top, vy < 0 {
+            y = top
+            falling = false
+            angle = 0
+        }
         place()
         let bottom = NSScreen.screens.map(\.frame.minY).min() ?? 0
         if y < bottom - 80 { window.orderOut(nil); return false }
@@ -246,7 +274,7 @@ final class PetView: NSView {
 @MainActor
 final class Pet {
     enum State: Equatable {
-        case sit, walk(CGFloat), run(CGFloat), sleep, react(String), special(String), act, fall, jump, held
+        case sit, walk(CGFloat), run(CGFloat), sleep, react(String), special(String), act, fall, jump, held, cuddle
     }
 
     /// A little routine: each step is a pose, how long it lasts, and frames per second.
@@ -255,6 +283,18 @@ final class Pet {
     var purrAt: Double?
     var prop: Prop? // the thing this cat is going to knock off
     var fetching = false // Kai is bringing his rope over
+    var food: Prop? // a bowl with this pet's name on it
+    var eating = false
+    weak var host: Pet? // the cat this one is curled up on
+    weak var rider: Pet? // the cat curled up on this one
+    weak var cuddleTarget: Pet?
+    weak var jumpOnto: Pet?
+    var napUntil: TimeInterval = 0
+
+    func detach() {
+        host?.rider = nil
+        host = nil
+    }
 
     func perform(_ s: [Step]) {
         steps = s
@@ -365,6 +405,13 @@ final class Pet {
 
     func clicked() {
         guard state != .fall && state != .jump else { return }
+        if state == .cuddle {
+            detach()
+            vy = 0
+            state = .fall
+            float("!", color: .white)
+            return
+        }
         if state == .sleep {
             go(.sit, for: 3)
             float("!", color: .white)
@@ -395,6 +442,7 @@ final class Pet {
     }
 
     func carried(to origin: NSPoint) {
+        detach()
         state = .held
         surfaceID = nil
         let w = spriteW * scale
@@ -426,6 +474,21 @@ final class Pet {
         timeLeft -= dt
         if state == .held { return }
 
+        if state == .cuddle {
+            guard let h = host, h.state == .sleep else {
+                detach()
+                vy = 0
+                state = .fall
+                return
+            }
+            x = h.x + 7 * scale
+            y = h.y + 7 * scale
+            show("sleep_\(Int(clock / 1.3) % 2)")
+            if clock - lastZ > 3.4 { lastZ = clock; float("z", color: NSColor(white: 0.95, alpha: 0.9)) }
+            place()
+            return
+        }
+
         if state == .jump {
             jumpT += dt / 0.55
             let t = min(1, jumpT)
@@ -433,7 +496,19 @@ final class Pet {
             y = jumpFrom.y + (jumpTo.y - jumpFrom.y) * t + CGFloat(sin(.pi * t)) * 26 * scale
             show("walk_1")
             place()
-            if t >= 1 { land(on: world.landing(x: x, below: y + 2)); go(.sit, for: .random(in: 2...4)) }
+            if t >= 1 {
+                if let h = jumpOnto, h.state == .sleep, h.rider == nil {
+                    jumpOnto = nil
+                    host = h
+                    h.rider = self
+                    go(.cuddle, for: 9999)
+                    window.order(.below, relativeTo: h.window.windowNumber)
+                } else {
+                    jumpOnto = nil
+                    land(on: world.landing(x: x, below: y + 2))
+                    go(.sit, for: .random(in: 2...4))
+                }
+            }
             return
         }
 
@@ -472,7 +547,7 @@ final class Pet {
             return
         }
 
-        if quiet, state != .sleep, case .react = state {} else if quiet, state != .sleep {
+        if quiet, state != .sleep, case .react = state {} else if quiet, state != .sleep, state != .cuddle {
             go(.sleep, for: 30)
         }
 
@@ -513,7 +588,7 @@ final class Pet {
         case .sleep:
             show("sleep_\(Int(clock / 1.1) % 2)")
             if clock - lastZ > 2.6 { lastZ = clock; float("z", color: NSColor(white: 0.95, alpha: 0.9)) }
-            if !quiet && userIdleSeconds() < 2 && clock > 3 { go(.sit, for: 3); float("!", color: .white) }
+            if !quiet && userIdleSeconds() < 2 && clock > 3 && ProcessInfo.processInfo.systemUptime > napUntil { go(.sit, for: 3); float("!", color: .white) }
         case let .react(pose):
             let n = max(1, book.count(name, pose.replacingOccurrences(of: "_0", with: "")))
             show(pose.hasSuffix("_0") ? pose : "\(pose)_\(Int(clock * 6) % n)")
@@ -522,6 +597,18 @@ final class Pet {
             show("\(pose)_\(Int(clock / 0.8) % n)")
         case .act:
             if let at = purrAt, clock >= at { purrAt = nil; app?.sounds.play("purr", volume: 0.35) }
+            if eating, let f = food {
+                let level = max(0, 3 - Int(clock / 1.25))
+                let kindName = kind == .dog ? "bone" : "fish"
+                if let img = book.image("props", "\(kindName)_\(level)") { f.setImage(img) }
+                if Int(clock / 0.42) != Int((clock - dt) / 0.42), clock < 3.75 { app?.sounds.play("tap", volume: 0.12) }
+                if clock >= 3.75 {
+                    eating = false
+                    f.vanish(after: 1.5)
+                    food = nil
+                    float(kind == .dog ? "♥" : "♥", color: NSColor(red: 0.95, green: 0.42, blue: 0.5, alpha: 1))
+                }
+            }
             if let p = prop, steps.first?.pose == "bap", clock > 0.55, !p.falling {
                 p.knock(toward: 1)
                 app?.sounds.play("tap", volume: 0.5)
@@ -542,12 +629,34 @@ final class Pet {
             break
         }
 
-        if timeLeft <= 0 && state != .sleep || (state == .sleep && timeLeft <= 0 && userIdleSeconds() < 60) {
+        if timeLeft <= 0 && state != .sleep || (state == .sleep && timeLeft <= 0 && userIdleSeconds() < 60 && ProcessInfo.processInfo.systemUptime > napUntil) {
             decide(world: world, others: others)
         }
     }
 
     func arrived() {
+        if let f = food, abs(f.x - x) < 30 * scale {
+            x = f.x
+            place()
+            f.window.order(.above, relativeTo: window.windowNumber)
+            eating = true
+            let after: Step = kind == .dog ? Step(pose: "happy", seconds: 2.2, fps: 9) : Step(pose: "lick", seconds: 2.4, fps: 2.5)
+            perform([Step(pose: "eat", seconds: 3.75, fps: 3.2), after])
+            float("nom", color: NSColor(white: 0.95, alpha: 1))
+            return
+        }
+        if let t = cuddleTarget {
+            cuddleTarget = nil
+            if t.state == .sleep, t.rider == nil, t.host == nil {
+                jumpFrom = CGPoint(x: x, y: y)
+                jumpTo = CGPoint(x: t.x + 7 * scale, y: t.y + 7 * scale)
+                jumpOnto = t
+                jumpT = 0
+                surfaceID = nil
+                state = .jump
+                return
+            }
+        }
         if let p = prop, !p.falling, abs(p.x - x) < 60 * scale {
             // wind up, bap, then sit there looking innocent
             perform([Step(pose: "bap", seconds: 0.55, fps: 0), Step(pose: "bap", seconds: 0.6, fps: 0), Step(pose: "sit", seconds: 1.4, fps: 1)])
@@ -582,8 +691,21 @@ final class Pet {
             return
         }
         if userIdleSeconds() > 90 { go(.sleep, for: 20); return }
+        // Food comes first.
+        if let f = food {
+            go(.run(f.x), for: 30)
+            return
+        }
+        // Curl up on a sleeping friend.
+        if kind == .cat, host == nil, rider == nil,
+           let other = others.first(where: { $0.kind == .cat && $0.state == .sleep && $0.surfaceID == id && $0.rider == nil && $0.host == nil }),
+           userIdleSeconds() > 90 || Double.random(in: 0..<1) < 0.3 {
+            cuddleTarget = other
+            go(.walk(other.x), for: 40)
+            return
+        }
         // A cat can't resist something sitting on the ledge.
-        if kind == .cat, hasBap, let p = app?.props.first(where: { !$0.falling && $0.claimedBy == nil && abs($0.y - y) < 4 }),
+        if kind == .cat, hasBap, let p = app?.props.first(where: { !$0.falling && $0.landTop == nil && $0.claimedBy == nil && abs($0.y - y) < 4 }),
            ProcessInfo.processInfo.systemUptime - p.born > 6, Double.random(in: 0..<1) < 0.6 {
             p.claimedBy = name
             prop = p
@@ -703,6 +825,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         status.menu = menu
         for (name, _) in names where enabled(name) { spawn(name) }
+        if CommandLine.arguments.contains("--demo-feed") { DispatchQueue.main.asyncAfter(deadline: .now() + 3) { MainActor.assumeIsolated { self.feed() } } }
+        if CommandLine.arguments.contains("--demo-cuddle") { DispatchQueue.main.asyncAfter(deadline: .now() + 3) { MainActor.assumeIsolated { self.cuddle() } } }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -768,6 +892,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snd.target = self
         snd.state = sounds.on ? .on : .off
         menu.addItem(snd)
+        let feedItem = NSMenuItem(title: "Feeding time 🐟", action: #selector(feed), keyEquivalent: "")
+        feedItem.target = self
+        menu.addItem(feedItem)
+        let cuddleItem = NSMenuItem(title: "Cuddle nap", action: #selector(cuddle), keyEquivalent: "")
+        cuddleItem.target = self
+        cuddleItem.isEnabled = pets["thea"] != nil && pets["ivan"] != nil
+        menu.addItem(cuddleItem)
         let drop = NSMenuItem(title: "Leave something for the cats", action: #selector(dropProp), keyEquivalent: "")
         drop.target = self
         menu.addItem(drop)
@@ -831,6 +962,46 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleSounds() {
         sounds.on.toggle()
         defaults.set(sounds.on, forKey: "sounds")
+    }
+
+    /// Feeding time: a bowl for each pet lands near the cursor, and everyone comes running.
+    @objc func feed() {
+        let m = NSEvent.mouseLocation
+        guard let ledge = world.surfaces.filter({ $0.id < 0 && $0.holds(m.x) }).first ?? world.floor(near: m.x) else { return }
+        let order = names.map(\.0).filter { pets[$0] != nil }
+        let gap = 46 * scale
+        for (i, name) in order.enumerated() {
+            guard let pet = pets[name] else { continue }
+            pet.food?.vanish()
+            let kindName = pet.kind == .dog ? "bone" : "fish"
+            guard let img = book.image("props", "\(kindName)_3") else { continue }
+            let x = min(max(m.x + (CGFloat(i) - CGFloat(order.count - 1) / 2) * gap, ledge.minX + 20), ledge.maxX - 20)
+            let bowl = Prop(kind: kindName, image: img, scale: scale, at: CGPoint(x: x, y: max(m.y, ledge.top + 40)))
+            bowl.falling = true
+            bowl.landTop = ledge.top
+            props.append(bowl)
+            pet.food = bowl
+            pet.eating = false
+            pet.detach()
+            pet.napUntil = 0
+            if pet.surfaceID != nil, pet.state != .fall, pet.state != .jump {
+                pet.go(.run(x), for: 30)
+            }
+        }
+        sounds.play("mew", volume: 0.45)
+    }
+
+    /// Put Thea down for a nap and send Ivan to curl up on her.
+    @objc func cuddle() {
+        guard let thea = pets["thea"], let ivan = pets["ivan"], thea.surfaceID != nil else { return }
+        let until = ProcessInfo.processInfo.systemUptime + 120
+        thea.detach()
+        ivan.detach()
+        thea.go(.sleep, for: 120)
+        thea.napUntil = until
+        ivan.napUntil = until
+        ivan.cuddleTarget = thea
+        if ivan.surfaceID != nil { ivan.go(.walk(thea.x), for: 40) }
     }
 
     @objc func dropProp() {

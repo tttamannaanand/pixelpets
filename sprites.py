@@ -156,6 +156,17 @@ def cat_bap(g, frame=0, big_ears=False):
     return p
 
 
+def cat_eat(g, frame=0, big_ears=False):
+    """Head down in the bowl, eyes shut, bobbing."""
+    g.ellipse(CX, 26.5, 6.6, 5.4, "body")
+    g.ellipse(CX, 26, 3, 3.6, "chest")
+    g.rect(CX - 4, 28, CX - 2, GROUND - 1, "leg")
+    g.rect(CX + 2, 28, CX + 4, GROUND - 1, "leg")
+    g.line([(CX + 5, 31), (CX + 9, 30), (CX + 11, 27), (CX + 12 - frame, 24)], "tail", 2)
+    p = cat_head(g, 19 + frame * 0.8, big_ears)
+    return p | {"closed": True, "nomouth": True}
+
+
 def cat_lick(g, frame=0, big_ears=False):
     """Grooming: paw up to the mouth, eyes shut, tongue out."""
     g.ellipse(CX, 26.5, 6.6, 5.4, "body")
@@ -257,6 +268,16 @@ def dog_happy(g, frame=0):
     g.rect(CX + 3, GROUND, CX + 6, GROUND, "paw")
     p = dog_head(g, 13 - bounce, flap=1 + frame % 2)
     return p | {"happy": True, "bigtongue": True}
+
+
+def dog_eat(g, frame=0):
+    """Face in the bowl, tail going."""
+    dog_tail(g, frame)
+    g.ellipse(CX, 26.5, 7, 5.4, "body")
+    g.rect(CX - 5, 28, CX - 3, GROUND - 1, "leg")
+    g.rect(CX + 3, 28, CX + 5, GROUND - 1, "leg")
+    p = dog_head(g, 18 + frame * 0.8, flap=1)
+    return p | {"closed": True}
 
 
 def dog_stand(g, frame=0, rope=False):
@@ -529,6 +550,7 @@ def poses(name: str):
             "hiss": [lambda g, i=i: cat_hiss(g, i, big) for i in range(2)],
             "swipe": [lambda g, i=i: cat_swipe(g, i, big) for i in range(2)],
             "bap": [lambda g, i=i: cat_bap(g, i, big) for i in range(2)],
+            "eat": [lambda g, i=i: cat_eat(g, i, big) for i in range(2)],
         }
         if big:
             p["splat"] = [lambda g, i=i: cat_splat(g, i) for i in range(2)]
@@ -542,6 +564,7 @@ def poses(name: str):
         "tug": [lambda g, i=i: dog_sit(g, i, rope=True) for i in range(3)],
         "carry": [lambda g, i=i: dog_stand(g, i, rope=True) for i in range(4)],
         "happy": [lambda g, i=i: dog_happy(g, i) for i in range(3)],
+        "eat": [lambda g, i=i: dog_eat(g, i) for i in range(2)],
     }
 
 
@@ -584,9 +607,46 @@ PROP_COLORS = {
 }
 
 
+def bowl(rim, body, food, level):
+    """A 16 x 9 bowl, with `level` (0-3) of fish or a bone in it."""
+    img = Image.new("RGBA", (16, 9), (0, 0, 0, 0))
+    o = (40, 32, 30, 255)
+    rows = ["................", "................", "................", "................",
+            ".oooooooooooooo.", "orrrrrrrrrrrrrro", ".obbbbbbbbbbbbo.", "..obbbbbbbbbbo..", "...oooooooooo..."]
+    pal = {"o": o, "r": rim, "b": body}
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch in pal:
+                img.putpixel((x, y), pal[ch])
+    if food == "fish":
+        fish = [(2, 3, [".gggg.t", "gGgGgtt", ".gggg.t"]), (8, 2, ["t.gggg.", "ttgGgGg", "t.gggg."])]
+        cols = {"g": (150, 176, 196, 255), "G": (98, 126, 150, 255), "t": (120, 150, 172, 255)}
+        shown = fish[: 2 if level >= 2 else 1] if level >= 1 else []
+        for ox, oy, shape in shown:
+            for y, row in enumerate(shape):
+                for x, ch in enumerate(row):
+                    if ch in cols and 0 <= oy + y < 5:
+                        img.putpixel((ox + x, oy + y), cols[ch])
+        if level == 1:
+            for x in range(9, 13):
+                img.putpixel((x, 4), (150, 176, 196, 255))
+    else:
+        bone = ["w.......w", "wwwwwwwww", "w.......w"]
+        if level >= 1:
+            width = {3: 9, 2: 6, 1: 3}[level]
+            for y, row in enumerate(bone):
+                for x, ch in enumerate(row[:width]):
+                    if ch == "w":
+                        img.putpixel((3 + x, 2 + y), (246, 240, 226, 255))
+    return img
+
+
 def props():
     d = OUT / "props"
     d.mkdir(parents=True, exist_ok=True)
+    for level in range(4):
+        bowl((240, 150, 190, 255), (214, 110, 160, 255), "fish", level).save(d / f"fish_{level}.png")
+        bowl((120, 170, 230, 255), (70, 120, 200, 255), "bone", level).save(d / f"bone_{level}.png")
     for name, rows in PROPS.items():
         w = max(len(r) for r in rows)
         img = Image.new("RGBA", (w, len(rows)), (0, 0, 0, 0))
