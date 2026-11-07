@@ -56,17 +56,21 @@ struct Surface: Equatable {
 final class World {
     private(set) var surfaces: [Surface] = []
     private var last: TimeInterval = 0
+    /// Height of a pet in points; the home ledge sits this far below the menu bar.
+    var petHeight: CGFloat = 68
+    var useWindows = false
 
     func refresh(force: Bool = false) {
         let now = ProcessInfo.processInfo.systemUptime
         if !force && now - last < 0.25 { return }
         last = now
         var out: [Surface] = []
+        // Home: a ledge along the top of each screen, so the pets' ears touch the menu bar.
         for (i, screen) in NSScreen.screens.enumerated() {
             let f = screen.visibleFrame
-            out.append(Surface(id: -1 - i, top: f.minY, minX: f.minX + 20, maxX: f.maxX - 20))
+            out.append(Surface(id: -1 - i, top: f.maxY - petHeight, minX: f.minX + 20, maxX: f.maxX - 20))
         }
-        guard let primary = NSScreen.screens.first else { surfaces = out; return }
+        guard useWindows, let primary = NSScreen.screens.first else { surfaces = out; return }
         let mainH = primary.frame.maxY
         let me = getpid()
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
@@ -105,6 +109,8 @@ func userIdleSeconds() -> Double {
 // MARK: - The pet's window
 
 final class PetWindow: NSPanel {
+    // Let pets sit right up against the menu bar instead of being pushed below it.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
@@ -331,6 +337,13 @@ final class Pet {
             if let s = world.landing(x: x, below: y), s.top >= ny {
                 land(on: s)
                 go(.sit, for: .random(in: 1.5...3))
+            } else if world.landing(x: x, below: y) == nil, let home = world.surfaces.filter({ $0.holds(x) && $0.id < 0 }).first ?? world.floor(near: x) {
+                // dropped below home: hop back up to the ledge
+                jumpFrom = CGPoint(x: x, y: y)
+                jumpTo = CGPoint(x: min(max(x, home.minX), home.maxX), y: home.top)
+                jumpT = 0
+                state = .jump
+                return
             } else {
                 y = ny
                 if y < -500, let f = world.floor(near: x) { x = (f.minX + f.maxX) / 2; land(on: f) }
@@ -413,7 +426,7 @@ final class Pet {
             go(.run(spanX()), for: 10)
         case ..<0.80:
             // jump to a nearby window top or back down
-            let options = world.surfaces.filter { $0.id != id && abs($0.top - y) < 420 * scale / 3 && $0.maxX - $0.minX > 80 }
+            let options = world.surfaces.filter { $0.id != id && abs($0.top - y) < 900 && $0.maxX - $0.minX > 80 }
             if let s = options.randomElement() {
                 let tx = min(max(x, s.minX + 10), s.maxX - 10)
                 if abs(tx - x) < 400 {
@@ -469,7 +482,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let defaults = UserDefaults.standard
 
     var scale: CGFloat {
-        get { CGFloat(defaults.object(forKey: "scale") as? Double ?? 3) }
+        get { CGFloat(defaults.object(forKey: "scale") as? Double ?? 2) }
         set { defaults.set(Double(newValue), forKey: "scale") }
     }
 
@@ -483,6 +496,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let root = Bundle.main.resourceURL!.appendingPathComponent("sprites")
         book = SpriteBook(root: root)
+        world.petHeight = (spriteH - 2) * scale
+        world.useWindows = defaults.bool(forKey: "windows")
         world.refresh(force: true)
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let img = book.image("thea", "sit_0") {
@@ -505,7 +520,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let floor = world.floor(near: NSEvent.mouseLocation.x)
         let order = CGFloat(names.firstIndex { $0.0 == name } ?? 0)
         let x = (floor.map { $0.minX + ($0.maxX - $0.minX) * (0.3 + 0.2 * order) }) ?? 400
-        let p = Pet(name: name, kind: kind, book: book, scale: scale, at: CGPoint(x: x, y: (floor?.top ?? 0) + 300))
+        let p = Pet(name: name, kind: kind, book: book, scale: scale, at: CGPoint(x: x, y: (floor?.top ?? 0)))
         p.app = self
         pets[name] = p
     }
@@ -541,6 +556,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nap.target = self
         nap.state = quiet ? .on : .off
         menu.addItem(nap)
+        let hop = NSMenuItem(title: "Hop onto windows", action: #selector(toggleWindows), keyEquivalent: "")
+        hop.target = self
+        hop.state = world.useWindows ? .on : .off
+        menu.addItem(hop)
         let size = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for (label, s) in [("Small", 2.0), ("Medium", 3.0), ("Large", 4.0)] {
@@ -582,12 +601,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let m = NSEvent.mouseLocation
         for (i, p) in pets.values.enumerated() {
             p.x = m.x + CGFloat(i - 1) * 60 * scale / 3
-            p.y = m.y + 40
+            p.y = m.y
             p.surfaceID = nil
             p.vy = 0
             p.state = .fall
             p.place()
         }
+    }
+
+    @objc func toggleWindows() {
+        world.useWindows.toggle()
+        defaults.set(world.useWindows, forKey: "windows")
+        world.refresh(force: true)
     }
 
     @objc func toggleQuiet() {
@@ -598,7 +623,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func setSize(_ sender: NSMenuItem) {
         guard let s = sender.representedObject as? Double else { return }
         scale = CGFloat(s)
-        for p in pets.values { p.setScale(CGFloat(s)) }
+        world.petHeight = (spriteH - 2) * scale
+        world.refresh(force: true)
+        for p in pets.values { p.setScale(CGFloat(s)); p.surfaceID = nil; p.state = .fall }
     }
 
     @objc func toggleLogin() {

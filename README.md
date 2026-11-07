@@ -2,7 +2,7 @@
 
 Thea, Ivan and Kai, as tiny pixel pets that live on your Mac.
 
-They walk along the bottom of your screen and the tops of your windows, jump between them, fall when you move a window out from under them, watch your cursor, nap when you're away, and react when you click or pick them up.
+They live along the top of your screen, just under the menu bar (or, with "Hop onto windows" on, on the tops of your windows too), watch your cursor, nap when you're away, and react when you click or pick them up.
 
 | | |
 |---|---|
@@ -16,6 +16,7 @@ Click the pet in your menu bar to:
 - show or hide each pet
 - call everyone to your cursor
 - turn on nap time (quiet mode)
+- let them hop onto your windows
 - change the size
 - start at login
 
