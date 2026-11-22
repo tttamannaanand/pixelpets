@@ -38,6 +38,9 @@ Click a pet to pet it. Drag a pet to pick it up and drop it anywhere. Right-clic
 ./build.sh          # draws the sprites and builds build/Pixel Pets.app
 ```
 
+Needs macOS 13+, the Xcode command line tools (`swiftc`) and Python 3; the script installs Pillow and numpy into a local `.venv`.
+
 - `sprites.py` draws every sprite from shapes and the pets' colours (Python + Pillow).
+- `make_sounds.py` synthesises the sounds (Python + numpy).
 - `app/main.swift` is the whole app (Swift, AppKit, no dependencies).
 - `make_icon.py` makes the app icon.

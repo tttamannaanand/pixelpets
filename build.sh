@@ -2,7 +2,9 @@
 # Builds Pixel Pets.app from the sprites and app/main.swift.
 set -e
 cd "$(dirname "$0")"
-[ -d .venv ] || { python3 -m venv .venv && .venv/bin/pip -q install pillow; }
+[ -d .venv ] || python3 -m venv .venv
+# sprites.py/make_icon.py need Pillow, make_sounds.py needs numpy (also repairs older .venvs)
+.venv/bin/python -c "import PIL, numpy" 2>/dev/null || .venv/bin/pip -q install pillow numpy
 .venv/bin/python sprites.py >/dev/null
 APP="build/Pixel Pets.app"
 rm -rf "$APP"
